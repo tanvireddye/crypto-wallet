@@ -11,6 +11,7 @@ import {
   AlertCircleIcon, 
   SparklesIcon 
 } from '../components/common/Icons';
+import { apiLogin } from '../api';
 
 export const LoginPage = ({ onNavigate }) => {
   // Controlled form state
@@ -75,41 +76,8 @@ export const LoginPage = ({ onNavigate }) => {
     }
   };
 
-  // Helper to retrieve all registered accounts from localStorage
-  const getRegisteredUsers = () => {
-    const users = [];
-
-    // Check aether_users list
-    try {
-      const rawUsers = localStorage.getItem('aether_users');
-      if (rawUsers) {
-        const parsed = JSON.parse(rawUsers);
-        if (Array.isArray(parsed)) {
-          users.push(...parsed);
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing aether_users from localStorage:', e);
-    }
-
-    // Also check single primary aether_user fallback
-    try {
-      const rawUser = localStorage.getItem('aether_user');
-      if (rawUser) {
-        const parsed = JSON.parse(rawUser);
-        if (parsed?.email && !users.some((u) => u.email.toLowerCase() === parsed.email.toLowerCase())) {
-          users.push(parsed);
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing aether_user from localStorage:', e);
-    }
-
-    return users;
-  };
-
-  // Form submission & authentication check
-  const handleSubmit = (e) => {
+  // Form submission & authentication with Spring Boot backend
+  const handleSubmit = async (e) => {
     if (e) {
       if (typeof e.preventDefault === 'function') e.preventDefault();
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -134,63 +102,49 @@ export const LoginPage = ({ onNavigate }) => {
     }
 
     setIsSubmitting(true);
+    setErrors({});
 
-    // 2. Read registered accounts from localStorage
-    const registeredUsers = getRegisteredUsers();
-
-    if (registeredUsers.length === 0) {
-      setIsSubmitting(false);
-      setErrors({
-        general: 'No registered account found on this device. Please sign up to create your wallet.',
-        noAccount: true,
-      });
-      return;
-    }
-
-    // 3. Find matching account by email (case-insensitive)
-    const matchedUser = registeredUsers.find(
-      (u) => u.email && u.email.toLowerCase() === cleanEmail.toLowerCase()
-    );
-
-    if (!matchedUser) {
-      setIsSubmitting(false);
-      setErrors({
-        email: 'No account found with this email address. Please check your spelling or sign up.',
-      });
-      return;
-    }
-
-    // 4. Verify password
-    if (matchedUser.password !== cleanPassword) {
-      setIsSubmitting(false);
-      setErrors({
-        password: 'Incorrect password. Please verify your credentials and try again.',
-      });
-      return;
-    }
-
-    // 5. Successful Login: save logged-in session state in localStorage
     try {
+      // 2. Call backend POST /api/auth/login
+      const data = await apiLogin({
+        email: cleanEmail,
+        password: cleanPassword,
+      });
+
+      // 3. Save JWT and authenticated user session in localStorage
+      localStorage.setItem('aether_jwt_token', data.token);
+      localStorage.setItem('aether_token', data.token);
       localStorage.setItem('aether_is_logged_in', 'true');
       localStorage.setItem(
         'aether_current_user',
         JSON.stringify({
-          fullName: matchedUser.fullName,
-          email: matchedUser.email,
+          id: data.id,
+          fullName: data.fullName,
+          email: data.email,
+          walletAddress: data.walletAddress,
+          balance: data.balance,
+          currency: data.currency,
+          token: data.token,
           loggedInAt: new Date().toISOString(),
         })
       );
-    } catch (storageErr) {
-      console.error('Failed to save login session to localStorage:', storageErr);
+
+      setIsSubmitting(false);
+      setSuccessMessage(`Welcome back, ${data.fullName || 'User'}! Opening Dashboard...`);
+
+      // 4. Redirect to Dashboard
+      redirectTimerRef.current = setTimeout(() => {
+        onNavigate('dashboard');
+      }, 1000);
+    } catch (err) {
+      console.error('Login error:', err);
+      setIsSubmitting(false);
+      const message = err.message || 'Login failed. Please check your credentials and try again.';
+      setErrors({
+        general: message,
+        noAccount: message.toLowerCase().includes('not found'),
+      });
     }
-
-    setIsSubmitting(false);
-    setSuccessMessage(`Welcome back, ${matchedUser.fullName || 'User'}! Opening Dashboard...`);
-
-    // Redirect to Dashboard
-    redirectTimerRef.current = setTimeout(() => {
-      onNavigate('dashboard');
-    }, 1000);
   };
 
   const handleKeyDown = (e) => {

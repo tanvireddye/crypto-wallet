@@ -12,6 +12,7 @@ import {
   AlertCircleIcon, 
   SparklesIcon 
 } from '../components/common/Icons';
+import { apiSignup } from '../api';
 
 export const SignupPage = ({ onNavigate }) => {
   // Controlled Form State
@@ -76,8 +77,8 @@ export const SignupPage = ({ onNavigate }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Form Submission - Guarantees NO default browser navigation/reload
-  const handleSubmit = (e) => {
+  // Form Submission - Calls backend POST /api/auth/signup
+  const handleSubmit = async (e) => {
     if (e) {
       if (typeof e.preventDefault === 'function') e.preventDefault();
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -90,40 +91,47 @@ export const SignupPage = ({ onNavigate }) => {
     }
 
     setIsSubmitting(true);
+    setErrors((prev) => ({ ...prev, form: '' }));
 
     try {
-      // 1. Prepare user object
-      const userData = {
-        fullName: formData.fullName.trim(),
-        email: formData.email.trim().toLowerCase(),
+      // 1. Call backend API
+      const data = await apiSignup({
+        fullName: formData.fullName,
+        email: formData.email,
         password: formData.password,
+      });
+
+      // 2. Store JWT token securely in localStorage
+      if (data?.token) {
+        localStorage.setItem('aether_jwt_token', data.token);
+        localStorage.setItem('aether_token', data.token);
+      }
+
+      // 3. Store registered user info in localStorage for convenience & login pre-fill
+      const userData = {
+        id: data?.id,
+        fullName: data?.fullName || formData.fullName.trim(),
+        email: data?.email || formData.email.trim().toLowerCase(),
+        walletAddress: data?.walletAddress,
+        balance: data?.balance,
+        currency: data?.currency,
         registeredAt: new Date().toISOString(),
       };
-
-      // 2. Store user in localStorage
       localStorage.setItem('aether_user', JSON.stringify(userData));
-
-      // 3. Maintain persistent list of users in localStorage
-      try {
-        const storedUsers = JSON.parse(localStorage.getItem('aether_users') || '[]');
-        const updatedUsers = Array.isArray(storedUsers) 
-          ? [...storedUsers.filter((u) => u.email !== userData.email), userData]
-          : [userData];
-        localStorage.setItem('aether_users', JSON.stringify(updatedUsers));
-      } catch {
-        localStorage.setItem('aether_users', JSON.stringify([userData]));
-      }
 
       // 4. Mark signup success for Login page to display confirmation banner
       localStorage.setItem('aether_signup_success', 'true');
 
-      // 5. Navigate SPECIFICALLY to Login page (never to Landing)
+      // 5. Navigate to Login page
       setIsSubmitting(false);
       onNavigate('login');
     } catch (err) {
-      console.error('Failed to save account to localStorage:', err);
+      console.error('Failed to create account:', err);
       setIsSubmitting(false);
-      setErrors({ form: 'Unable to save account to local storage. Please try again.' });
+      setErrors((prev) => ({
+        ...prev,
+        form: err.message || 'Unable to create account. Please try again.',
+      }));
     }
   };
 

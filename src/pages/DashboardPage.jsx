@@ -23,6 +23,8 @@ export const DashboardPage = ({ onNavigate }) => {
   const handleLogout = () => {
     localStorage.removeItem('aether_is_logged_in');
     localStorage.removeItem('aether_current_user');
+    localStorage.removeItem('aether_token');
+    localStorage.removeItem('aether_jwt_token');
     onNavigate('login');
   };
 
